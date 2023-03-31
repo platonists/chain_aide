@@ -1,69 +1,39 @@
-import warnings
-import sys
-from copy import copy
-
 from functools import wraps, partial
+from typing import TYPE_CHECKING
+
 from web3._utils.abi import filter_by_name
 from web3.contract.contract import ContractFunction
-from web3.types import ABI
-from eth_typing import HexStr, AnyAddress
 
-from chain_aide.base.module import Module
 from chain_aide.utils import contract_call, contract_transaction
 
+if TYPE_CHECKING:
+    from chain_aide import Aide
 
-class Contract(Module):
-    abi: ABI = None
-    bytecode: HexStr = None
-    address: AnyAddress = None
 
-    def init(self,
-             abi,
-             bytecode=None,
-             address=None,
-             ):
-        self.__build_contract(abi, bytecode, address)
-        return copy(self)
+class Contract:
+    """ 简化合约操作
+    """
 
-    def deploy(self,
-               abi,
-               bytecode,
-               txn=None,
-               private_key=None,
-               *init_args,
-               **init_kwargs):
-        if self.address:
-            warnings.warn(f'contract {self.address} already exists, it will be replaced.', RuntimeWarning)
-
-        _temp_origin = self.aide.web3.eth.contract(abi=abi, bytecode=bytecode)
-        txn = _temp_origin.constructor(*init_args, **init_kwargs).build_transaction(txn)
-        tx_hash = self.aide.send_transaction(txn, private_key)
-        receipt = self.aide.eth.wait_for_transaction_receipt(tx_hash, timeout=20)
-
-        address = receipt.get('contractAddress')
-        if not address:
-            raise Exception(f'deploy contract failed, because: {receipt}.')
-
-        self.__build_contract(abi, bytecode, address)
-
-        return copy(self)
-
-    def __build_contract(self,
-                         abi,
-                         bytecode=None,
-                         address=None,
-                         ):
+    def __init__(self,
+                 aide: "Aide",
+                 abi,
+                 bytecode=None,
+                 address=None,
+                 ):
+        self.aide = aide
         self.abi = abi
         self.bytecode = bytecode
         self.address = address
-        self._origin = self.aide.web3.eth.contract(address=self.address, abi=self.abi, bytecode=self.bytecode)
-        self.functions = self._origin.functions
-        self.events = self._origin.events
-        self._set_functions(self._origin.functions)
-        self._set_events(self._origin.events)
-        self._set_fallback(self._origin.fallback)
+        self.origin = self.aide.web3.eth.contract(address=self.address, abi=self.abi, bytecode=self.bytecode)
+        self.functions = self.origin.functions
+        self.events = self.origin.events
+        self._set_functions(self.origin.functions)
+        self._set_events(self.origin.events)
+        self._set_fallback(self.origin.fallback)
 
     def _set_functions(self, functions):
+        """ 包装合约方法，
+        """
         # 合约event和function不会重名，因此不用担心属性已存在
         for func in functions:
             warp_function = self._function_wrap(getattr(functions, func))
@@ -84,25 +54,17 @@ class Contract(Module):
             self.fallback = fallback
 
     def _function_wrap(self, func):
-        fn_abis = filter_by_name(func.fn_name, self.abi)
-        if len(fn_abis) == 0:
+        abis = filter_by_name(func.fn_name, self.abi)
+        if len(abis) == 0:
             raise ValueError('The method ABI is not found.')
 
-        # 对于重载方法，仅取其一个，但需要其方法类型相同
-        # todo: 此处理存在隐患
-        fn_abi = fn_abis[0]
-        for _abi in fn_abis:
-            if _abi.get('stateMutability') != fn_abi.get('stateMutability'):
-                raise ValueError('override method are of different types')
+        # todo：优化重载方法
+        abi = abis[0]
 
-        # 忽略首个参数 'self'，以适配公共合约包装类
-        def fit_func(__self__, *args, **kwargs):
-            return func(*args, **kwargs)
-
-        if fn_abi.get('stateMutability') in ['view', 'pure']:
-            return partial(contract_call(fit_func), self)
+        if abi.get('stateMutability') in ['view', 'pure']:
+            return contract_call(func)
         else:
-            return partial(contract_transaction()(fit_func), self)
+            return partial(contract_transaction(func), self)
 
     @staticmethod
     def _event_wrap(func):

@@ -6,14 +6,11 @@ from setuptools import (
 
 deps = {
     'chain-aide': [
-        'web3.py>=1.3.0',
-        'eth_account>=1.2.0',
-        'eth_hash>=1.2.0',
-        'eth_keys>=1.2.0',
-        'eth_typing>=1.2.0',
-        'eth_utils>=1.2.0',
-        'rlp>=1.2.0',
-        'gql>=3.0.0rc0',
+        'web3>=6.0.0',
+        'eth_account>=0.8.0',
+        'eth_typing>=3.3.0',
+        'eth_utils>=2.1.0',
+        'loguru>=0.6.0',
     ]
 }
 
@@ -23,7 +20,7 @@ with open('./README.md', encoding='utf-8') as readme:
 setup(
     name='chain-aide',
     # *IMPORTANT*: Don't manually change the version here. Use the 'bumpversion' utility.
-    version='1.0.0',
+    version='1.0.2',
     description="""An aide that helps you quickly access mainstream public chain and use its basic functions.""",
     long_description=long_description,
     long_description_content_type='text/markdown',
